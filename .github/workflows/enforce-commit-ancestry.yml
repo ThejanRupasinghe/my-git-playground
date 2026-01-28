@@ -1,0 +1,53 @@
+name: Enforce Commit Ancestry
+
+on:
+  pull_request:
+    branches:
+      - stg
+      - master
+
+jobs:
+  check-ancestry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to see the history of other branches
+
+      - name: Verify Ancestry
+        run: |
+          TARGET_BRANCH=${{ github.base_ref }}
+          SOURCE_SHA=${{ github.event.pull_request.head.sha }}
+          
+          echo "Target branch: $TARGET_BRANCH"
+          echo "Checking commits from PR head: $SOURCE_SHA"
+
+          # Function to check if all commits in the PR exist in a required branch
+          check_lineage() {
+            local required_branch=$1
+            echo "Verifying that all commits in this PR exist in 'origin/$required_branch'..."
+            
+            # Get list of commits unique to this PR (not in the target branch)
+            PR_COMMITS=$(git rev-list origin/$TARGET_BRANCH..$SOURCE_SHA)
+            
+            for commit in $PR_COMMITS; do
+              # Check if the commit exists in the history of the required branch
+              if ! git branch -r --contains "$commit" | grep -q "origin/$required_branch"; then
+                echo "❌ ERROR: Commit $commit was not found in 'origin/$required_branch'."
+                echo "All changes must be merged into '$required_branch' before going to '$TARGET_BRANCH'."
+                exit 1
+              fi
+            done
+            echo "✅ All commits found in '$required_branch'."
+          }
+
+          if [ "$TARGET_BRANCH" == "stg" ]; then
+            # stg requires dev
+            check_lineage "dev"
+          
+          elif [ "$TARGET_BRANCH" == "master" ]; then
+            # master requires dev AND stg
+            check_lineage "dev"
+            check_lineage "stg"
+          fi
