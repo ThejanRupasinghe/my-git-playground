@@ -2,8 +2,6 @@ name: Enforce Commit Ancestry
 
 on:
   pull_request:
-    # We trigger on all branches to ensure the "Success" status 
-    # is reported back to the commit, preventing visual noise.
     branches:
       - dev
       - stg
@@ -11,55 +9,56 @@ on:
 
 jobs:
   check-ancestry:
-    name: "Ancestry Validation"
+    # This dynamic name is the secret sauce. 
+    # It forces GitHub to show separate status lines for each target branch.
+    name: "Ancestry Validation (${{ github.base_ref }})"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Essential to see full history of dev/stg
+          fetch-depth: 0
 
       - name: Run Ancestry Check
         run: |
-          TARGET_BRANCH=${{ github.base_ref }}
-          SOURCE_SHA=${{ github.event.pull_request.head.sha }}
+          # Use the environment variable GitHub provides automatically
+          TARGET_BRANCH="${{ github.base_ref }}"
+          SOURCE_SHA="${{ github.event.pull_request.head.sha }}"
           
-          echo "Target branch for this PR: $TARGET_BRANCH"
+          echo "Target branch for this specific run: $TARGET_BRANCH"
 
-          # --- 1. THE AUTO-PASS LOGIC ---
-          # If the PR is NOT going to stg or master, we exit 0 immediately.
-          # This gives the dev PR a green checkmark.
+          # 1. AUTO-PASS for dev or other branches
           if [[ "$TARGET_BRANCH" != "stg" && "$TARGET_BRANCH" != "master" ]]; then
-            echo "✅ Check not required for $TARGET_BRANCH. Automatically passing."
+            echo "✅ $TARGET_BRANCH is not a restricted branch. Passing check."
             exit 0
           fi
 
-          # --- 2. ANCESTRY LOGIC ---
+          # 2. ANCESTRY LOGIC
           check_lineage() {
             local required_branch=$1
-            echo "Verifying that all commits in this PR exist in 'origin/$required_branch'..."
+            echo "Verifying commits exist in 'origin/$required_branch'..."
             
-            # Find commits in PR that are NOT in the target branch
             PR_COMMITS=$(git rev-list origin/$TARGET_BRANCH..$SOURCE_SHA)
             
+            if [ -z "$PR_COMMITS" ]; then
+              echo "No new commits found relative to $TARGET_BRANCH."
+              return
+            fi
+
             for commit in $PR_COMMITS; do
               if ! git branch -r --contains "$commit" | grep -q "origin/$required_branch"; then
-                echo "::error::Commit $commit was not found in 'origin/$required_branch'."
-                echo "Manual edits or hotfixes are not allowed. Changes must come from $required_branch."
+                echo "::error::Commit $commit is missing from $required_branch."
                 exit 1
               fi
             done
-            echo "✅ Found all commits in '$required_branch'."
           }
 
-          # --- 3. THE RULES ---
+          # 3. THE RULES
           if [ "$TARGET_BRANCH" == "stg" ]; then
             check_lineage "dev"
-          
           elif [ "$TARGET_BRANCH" == "master" ]; then
-            # master requires both
-            check_lineage "dev"
             check_lineage "stg"
+            check_lineage "dev"
           fi
-
-          echo "🚀 All ancestry checks passed for $TARGET_BRANCH!"
+          
+          echo "🚀 Ancestry verified for $TARGET_BRANCH!"
