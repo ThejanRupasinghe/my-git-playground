@@ -3,15 +3,12 @@ name: Enforce Commit Ancestry
 on:
   pull_request:
     branches:
-      - dev
       - stg
       - master
 
 jobs:
   check-ancestry:
-    # This dynamic name is the secret sauce. 
-    # It forces GitHub to show separate status lines for each target branch.
-    name: "Ancestry Validation (${{ github.base_ref }})"
+    name: "Ancestry Validation"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
