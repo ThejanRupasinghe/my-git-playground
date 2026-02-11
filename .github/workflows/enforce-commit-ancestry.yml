@@ -2,60 +2,50 @@ name: Enforce Commit Ancestry
 
 on:
   pull_request:
-    branches:
-      - stg
-      - master
+    branches: [stg, master] # Only trigger for the branches we protect
 
 jobs:
-  check-ancestry:
-    name: "Ancestry Validation"
+  # --- STG VALIDATION ---
+  # This job ONLY exists when the PR target is 'stg'
+  validate-stg:
+    if: github.base_ref == 'stg'
+    name: "Ancestry Check: Must be in Dev"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Run Ancestry Check
+      - name: Verify dev ancestry
         run: |
-          # Use the environment variable GitHub provides automatically
-          TARGET_BRANCH="${{ github.base_ref }}"
-          SOURCE_SHA="${{ github.event.pull_request.head.sha }}"
-          
-          echo "Target branch for this specific run: $TARGET_BRANCH"
-
-          # 1. AUTO-PASS for dev or other branches
-          if [[ "$TARGET_BRANCH" != "stg" && "$TARGET_BRANCH" != "master" ]]; then
-            echo "✅ $TARGET_BRANCH is not a restricted branch. Passing check."
-            exit 0
-          fi
-
-          # 2. ANCESTRY LOGIC
-          check_lineage() {
-            local required_branch=$1
-            echo "Verifying commits exist in 'origin/$required_branch'..."
-            
-            PR_COMMITS=$(git rev-list origin/$TARGET_BRANCH..$SOURCE_SHA)
-            
-            if [ -z "$PR_COMMITS" ]; then
-              echo "No new commits found relative to $TARGET_BRANCH."
-              return
+          PR_COMMITS=$(git rev-list origin/stg..${{ github.event.pull_request.head.sha }})
+          for commit in $PR_COMMITS; do
+            if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
+              echo "::error::Commit $commit not found in dev."
+              exit 1
             fi
+          done
 
-            for commit in $PR_COMMITS; do
-              if ! git branch -r --contains "$commit" | grep -q "origin/$required_branch"; then
-                echo "::error::Commit $commit is missing from $required_branch."
-                exit 1
-              fi
-            done
-          }
-
-          # 3. THE RULES
-          if [ "$TARGET_BRANCH" == "stg" ]; then
-            check_lineage "dev"
-          elif [ "$TARGET_BRANCH" == "master" ]; then
-            check_lineage "stg"
-            check_lineage "dev"
-          fi
-          
-          echo "🚀 Ancestry verified for $TARGET_BRANCH!"
+  # --- MASTER VALIDATION ---
+  # This job ONLY exists when the PR target is 'master'
+  validate-master:
+    if: github.base_ref == 'master'
+    name: "Ancestry Check: Must be in Dev and Stg"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify dev and stg ancestry
+        run: |
+          SHA=${{ github.event.pull_request.head.sha }}
+          PR_COMMITS=$(git rev-list origin/master..$SHA)
+          for commit in $PR_COMMITS; do
+            if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
+              echo "::error::Commit $commit missing from dev."
+              exit 1
+            fi
+            if ! git branch -r --contains "$commit" | grep -q "origin/stg"; then
+              echo "::error::Commit $commit missing from stg."
+              exit 1
+            fi
+          done
