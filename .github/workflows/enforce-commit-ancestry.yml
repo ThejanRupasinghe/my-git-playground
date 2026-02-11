@@ -2,50 +2,53 @@ name: Enforce Commit Ancestry
 
 on:
   pull_request:
-    branches: [stg, master] # Only trigger for the branches we protect
+    branches: [stg, master]
 
 jobs:
-  # --- STG VALIDATION ---
-  # This job ONLY exists when the PR target is 'stg'
-  validate-stg:
-    if: github.base_ref == 'stg'
-    name: "Ancestry Check: Must be in Dev"
+  ancestry-gate:
+    name: Validate Ancestry for ${{ github.base_ref }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify dev ancestry
-        run: |
-          PR_COMMITS=$(git rev-list origin/stg..${{ github.event.pull_request.head.sha }})
-          for commit in $PR_COMMITS; do
-            if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
-              echo "::error::Commit $commit not found in dev."
-              exit 1
-            fi
-          done
 
-  # --- MASTER VALIDATION ---
-  # This job ONLY exists when the PR target is 'master'
-  validate-master:
-    if: github.base_ref == 'master'
-    name: "Ancestry Check: Must be in Dev and Stg"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Verify dev and stg ancestry
+      - name: Verify Ancestry
         run: |
-          SHA=${{ github.event.pull_request.head.sha }}
-          PR_COMMITS=$(git rev-list origin/master..$SHA)
-          for commit in $PR_COMMITS; do
-            if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
-              echo "::error::Commit $commit missing from dev."
-              exit 1
-            fi
-            if ! git branch -r --contains "$commit" | grep -q "origin/stg"; then
-              echo "::error::Commit $commit missing from stg."
-              exit 1
-            fi
-          done
+          TARGET="${{ github.base_ref }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          
+          echo "PR Target: $TARGET"
+          echo "Checking SHA: $HEAD_SHA"
+
+          # Get the list of commits unique to this PR
+          PR_COMMITS=$(git rev-list origin/$TARGET..$HEAD_SHA)
+
+          # --- LOGIC FOR STG ---
+          if [ "$TARGET" == "stg" ]; then
+            echo "Validating that commits are in 'dev'..."
+            for commit in $PR_COMMITS; do
+              if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
+                echo "::error::Commit $commit is NOT in 'dev'. Merge to 'dev' first."
+                exit 1
+              fi
+            done
+          fi
+
+          # --- LOGIC FOR MASTER ---
+          if [ "$TARGET" == "master" ]; then
+            echo "Validating that commits are in 'dev' AND 'stg'..."
+            for commit in $PR_COMMITS; do
+              if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
+                echo "::error::Commit $commit is NOT in 'dev'."
+                exit 1
+              fi
+              if ! git branch -r --contains "$commit" | grep -q "origin/stg"; then
+                echo "::error::Commit $commit is NOT in 'stg'. Merge to 'stg' first."
+                exit 1
+              fi
+            done
+          fi
+          
+          echo "✅ All ancestry requirements met for $TARGET."
