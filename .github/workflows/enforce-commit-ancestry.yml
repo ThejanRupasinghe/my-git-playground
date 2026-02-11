@@ -1,0 +1,54 @@
+name: Enforce Commit Ancestry
+
+on:
+  pull_request:
+    branches: [stg, master]
+
+jobs:
+  ancestry-gate:
+    name: Validate Ancestry for ${{ github.base_ref }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify Ancestry
+        run: |
+          TARGET="${{ github.base_ref }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          
+          echo "PR Target: $TARGET"
+          echo "Checking SHA: $HEAD_SHA"
+
+          # Get the list of commits unique to this PR
+          PR_COMMITS=$(git rev-list origin/$TARGET..$HEAD_SHA)
+
+          # --- LOGIC FOR STG ---
+          if [ "$TARGET" == "stg" ]; then
+            echo "Validating that commits are in 'dev'..."
+            for commit in $PR_COMMITS; do
+              if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
+                echo "::error::Commit $commit is NOT in 'dev'. Merge to 'dev' first."
+                exit 1
+              fi
+            done
+          fi
+
+          # --- LOGIC FOR MASTER ---
+          if [ "$TARGET" == "master" ]; then
+            echo "Validating that commits are in 'dev' AND 'stg'..."
+            for commit in $PR_COMMITS; do
+              if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
+                echo "::error::Commit $commit is NOT in 'dev'."
+                exit 1
+              fi
+              if ! git branch -r --contains "$commit" | grep -q "origin/stg"; then
+                echo "::error::Commit $commit is NOT in 'stg'. Merge to 'stg' first."
+                exit 1
+              fi
+            done
+          fi
+          
+          echo "✅ All ancestry requirements met for $TARGET."
