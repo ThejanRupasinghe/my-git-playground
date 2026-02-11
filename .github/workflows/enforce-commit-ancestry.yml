@@ -5,50 +5,51 @@ on:
     branches: [stg, master]
 
 jobs:
-  ancestry-gate:
-    name: Validate Ancestry for ${{ github.base_ref }}
+  # Using a matrix makes GitHub treat these as separate, 
+  # uniquely identifiable status checks.
+  ancestry-validation:
+    # This is the name you will see in the PR
+    name: "Ancestry Validation (${{ matrix.target }})"
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # This ensures the job only runs for the current PR's target
+        target: [ "${{ github.base_ref }}" ]
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Verify Ancestry
+      - name: Verify Lineage
         run: |
-          TARGET="${{ github.base_ref }}"
-          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          TARGET="${{ matrix.target }}"
+          SOURCE="${{ github.event.pull_request.head.sha }}"
           
-          echo "PR Target: $TARGET"
-          echo "Checking SHA: $HEAD_SHA"
+          echo "Verifying ancestry for PR targeting: $TARGET"
 
-          # Get the list of commits unique to this PR
-          PR_COMMITS=$(git rev-list origin/$TARGET..$HEAD_SHA)
+          # Function to check if commits exist in a reference branch
+          check_exists_in() {
+            local ref_branch=$1
+            echo "Checking: Do all PR commits exist in origin/$ref_branch?"
+            
+            # List commits in PR not in current target
+            PR_COMMITS=$(git rev-list origin/$TARGET..$SOURCE)
+            
+            for commit in $PR_COMMITS; do
+              if ! git branch -r --contains "$commit" | grep -q "origin/$ref_branch"; then
+                echo "::error::Commit $commit is missing from $ref_branch."
+                exit 1
+              fi
+            done
+          }
 
-          # --- LOGIC FOR STG ---
           if [ "$TARGET" == "stg" ]; then
-            echo "Validating that commits are in 'dev'..."
-            for commit in $PR_COMMITS; do
-              if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
-                echo "::error::Commit $commit is NOT in 'dev'. Merge to 'dev' first."
-                exit 1
-              fi
-            done
-          fi
-
-          # --- LOGIC FOR MASTER ---
-          if [ "$TARGET" == "master" ]; then
-            echo "Validating that commits are in 'dev' AND 'stg'..."
-            for commit in $PR_COMMITS; do
-              if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
-                echo "::error::Commit $commit is NOT in 'dev'."
-                exit 1
-              fi
-              if ! git branch -r --contains "$commit" | grep -q "origin/stg"; then
-                echo "::error::Commit $commit is NOT in 'stg'. Merge to 'stg' first."
-                exit 1
-              fi
-            done
+            check_exists_in "dev"
+          elif [ "$TARGET" == "master" ]; then
+            check_exists_in "dev"
+            check_exists_in "stg"
           fi
           
-          echo "✅ All ancestry requirements met for $TARGET."
+          echo "✅ Ancestry verified."
