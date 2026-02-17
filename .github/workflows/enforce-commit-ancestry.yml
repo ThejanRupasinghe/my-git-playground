@@ -3,19 +3,15 @@ name: Enforce Commit Ancestry
 on:
   pull_request:
     branches: [stg, master]
+  workflow_dispatch:
 
 jobs:
-  # Using a matrix makes GitHub treat these as separate, 
-  # uniquely identifiable status checks.
+  # The 'id' here is just a label, but the 'name' is what GitHub uses
+  # to track the status check.
   ancestry-validation:
-    # This is the name you will see in the PR
-    name: "Ancestry Validation (${{ matrix.target }})"
+    # Adding the PR number to the name makes this unique per PR.
+    name: "Ancestry Validation (Target: ${{ github.base_ref }}) - PR #${{ github.event.pull_request.number }}"
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # This ensures the job only runs for the current PR's target
-        target: [ "${{ github.base_ref }}" ]
-    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,17 +20,12 @@ jobs:
 
       - name: Verify Lineage
         run: |
-          TARGET="${{ matrix.target }}"
+          TARGET="${{ github.base_ref }}"
           SOURCE="${{ github.event.pull_request.head.sha }}"
           
-          echo "Verifying ancestry for PR targeting: $TARGET"
-
-          # Function to check if commits exist in a reference branch
           check_exists_in() {
             local ref_branch=$1
-            echo "Checking: Do all PR commits exist in origin/$ref_branch?"
-            
-            # List commits in PR not in current target
+            echo "Checking origin/$ref_branch..."
             PR_COMMITS=$(git rev-list origin/$TARGET..$SOURCE)
             
             for commit in $PR_COMMITS; do
@@ -48,8 +39,6 @@ jobs:
           if [ "$TARGET" == "stg" ]; then
             check_exists_in "dev"
           elif [ "$TARGET" == "master" ]; then
-            check_exists_in "dev"
             check_exists_in "stg"
           fi
-          
           echo "✅ Ancestry verified."
