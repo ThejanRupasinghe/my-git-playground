@@ -3,13 +3,12 @@ name: Enforce Commit Ancestry
 on:
   pull_request:
     branches: [stg, master]
-  workflow_dispatch:
 
 jobs:
-  # --- STG GATE ---
+  # This job only RUNS if the PR is targeting stg
   validate-stg:
     if: github.base_ref == 'stg'
-    name: "Ancestry Gatekeeper" # Use a STATIC name for Branch Protection
+    name: "Ancestry Validation (stg)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,18 +16,19 @@ jobs:
           fetch-depth: 0
       - name: Verify dev ancestry
         run: |
+          # Only check dev ancestry
           PR_COMMITS=$(git rev-list origin/stg..${{ github.event.pull_request.head.sha }})
           for commit in $PR_COMMITS; do
             if ! git branch -r --contains "$commit" | grep -q "origin/dev"; then
-              echo "::error::Commit $commit not found in dev. Merge to dev first."
+              echo "::error::Commit $commit missing from dev."
               exit 1
             fi
           done
 
-  # --- MASTER GATE ---
+  # This job only RUNS if the PR is targeting master
   validate-master:
     if: github.base_ref == 'master'
-    name: "Ancestry Gatekeeper" # Same name, but only one will ever run per PR
+    name: "Ancestry Validation (master)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,10 +36,11 @@ jobs:
           fetch-depth: 0
       - name: Verify stg ancestry
         run: |
+          # Only check stg ancestry
           PR_COMMITS=$(git rev-list origin/master..${{ github.event.pull_request.head.sha }})
           for commit in $PR_COMMITS; do
             if ! git branch -r --contains "$commit" | grep -q "origin/stg"; then
-              echo "::error::Commit $commit missing from stg. Merge to stg first."
+              echo "::error::Commit $commit missing from stg."
               exit 1
             fi
           done
