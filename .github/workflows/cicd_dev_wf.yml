@@ -1,0 +1,55 @@
+name: dev cicd workflow
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - closed
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+  pull-requests: read
+
+jobs:
+  deploy-dev:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: 'actions/checkout@v6'
+      with:
+        fetch-depth: 0
+
+    - id: 'auth'
+      uses: 'google-github-actions/auth@v3'
+      with:
+        project_id: 'my-first-project-9453'
+        workload_identity_provider: 'projects/433255870687/locations/global/workloadIdentityPools/github-cicd-pool/providers/github-cicd-pool-provider'
+        service_account: 'github-cicd@my-first-project-9453.iam.gserviceaccount.com'
+
+    - id: 'deploy-hello-func'
+      uses: 'google-github-actions/deploy-cloud-functions@v4'
+      timeout-minutes: 10
+      with:
+        project_id: 'my-first-project-9453'
+        region: 'us-east4'
+        name: 'my-hello-function'
+        runtime: 'python314'
+        source_dir: './functions/both_func'
+        entry_point: 'hello_http'
+        service_account: 'cloud-run-func@my-first-project-9453.iam.gserviceaccount.com'
+  
+    - id: 'deploy-hi-func'
+      uses: 'google-github-actions/deploy-cloud-functions@v4'
+      timeout-minutes: 10
+      with:
+        project_id: 'my-first-project-9453'
+        region: 'us-east4'
+        name: 'my-hi-function'
+        runtime: 'python314'
+        source_dir: './functions/both_func'
+        entry_point: 'hi_http'
+        service_account: 'cloud-run-func@my-first-project-9453.iam.gserviceaccount.com'
