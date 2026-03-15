@@ -38,7 +38,7 @@ jobs:
         region: 'us-east4'
         name: 'my-hello-function'
         runtime: 'python314'
-        source_dir: '${GITHUB_WORKSPACE}/functions/both_func'
+        source_dir: ${GITHUB_WORKSPACE}/functions/both_func
         entry_point: 'hello_http'
         service_account: 'cloud-run-func@my-first-project-9453.iam.gserviceaccount.com'
   
@@ -50,6 +50,6 @@ jobs:
         region: 'us-east4'
         name: 'my-hi-function'
         runtime: 'python314'
-        source_dir: '${GITHUB_WORKSPACE}/functions/both_func'
+        source_dir: ${GITHUB_WORKSPACE}/functions/both_func
         entry_point: 'hi_http'
         service_account: 'cloud-run-func@my-first-project-9453.iam.gserviceaccount.com'
