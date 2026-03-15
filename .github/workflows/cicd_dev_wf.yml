@@ -21,7 +21,12 @@ jobs:
     steps:
     - uses: 'actions/checkout@v6'
       with:
-        fetch-depth: 0
+          fetch-depth: 0
+    - run: |
+          echo ${{ github.workspace }}
+          echo $GITHUB_WORKSPACE
+          echo ${GITHUB_WORKSPACE}
+          echo ${{GITHUB_WORKSPACE}}
 
     - id: 'auth'
       uses: 'google-github-actions/auth@v3'
